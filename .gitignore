@@ -1,0 +1,13 @@
+.env
+.local/
+.claude/settings.local.json
+
+# Python build artifacts
+*.egg-info/
+dist/
+build/
+__pycache__/
+*.pyc
+*.pyo
+uv.lock
+.venv/

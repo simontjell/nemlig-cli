@@ -1,0 +1,38 @@
+[project]
+name = "nemlig-cli"
+version = "0.1.0"
+description = "CLI for nemlig.com grocery shopping"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31.0",
+    "argcomplete>=3.0.0",
+]
+
+[project.optional-dependencies]
+ai = ["anthropic>=0.40.0"]
+forms = [
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.1.0",
+]
+scanner = [
+    "pyzbar>=0.1.9",
+    "opencv-python>=4.8.0",
+    "Pillow>=10.0.0",
+    "openfoodfacts>=3.0.0",
+]
+all = [
+    "anthropic>=0.40.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth-oauthlib>=1.1.0",
+    "openfoodfacts>=3.0.0",
+    "pyzbar>=0.1.9",
+    "opencv-python>=4.8.0",
+    "Pillow>=10.0.0",
+]
+
+[project.scripts]
+nemlig = "nemlig_cli:main"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
