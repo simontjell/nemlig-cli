@@ -302,6 +302,22 @@ def save_grocery_list(data: dict) -> None:
     LIST_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False))
 
 
+HISTORY_CACHE_FILE = Path.home() / ".config" / "nemlig" / "historik_cache.json"
+
+
+def load_history_cache() -> dict | None:
+    """Load compact order history cache. Returns None if missing."""
+    if HISTORY_CACHE_FILE.exists():
+        return json.loads(HISTORY_CACHE_FILE.read_text())
+    return None
+
+
+def save_history_cache(data: dict) -> None:
+    """Save compact order history cache."""
+    HISTORY_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    HISTORY_CACHE_FILE.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
+
+
 BASE_URL = "https://www.nemlig.com"
 SEARCH_API_URL = "https://webapi.prod.knl.nemlig.it/searchgateway/api"
 
@@ -945,6 +961,52 @@ def cmd_history(auth: AuthTokens, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_refresh_history(auth: AuthTokens, args: argparse.Namespace) -> int:
+    """Fetch order history with line items and write a compact cache file."""
+    from datetime import datetime, timezone
+
+    limit = args.limit
+    print(f"Fetching last {limit} orders...", file=sys.stderr)
+    history = get_order_history(auth, skip=0, take=limit)
+    orders = history.get("Orders", [])
+
+    if not orders:
+        print("No orders found.", file=sys.stderr)
+        return 1
+
+    cached_orders = []
+    for i, order in enumerate(orders, start=1):
+        order_id = order.get("Id")
+        print(f"  [{i}/{len(orders)}] Order {order_id}...", file=sys.stderr)
+        details = get_order_details(auth, order_id)
+        lines = details.get("Lines", [])
+        cached_orders.append({
+            "id": order_id,
+            "date": order.get("DeliveryDate") or order.get("OrderDate"),
+            "items": [
+                {
+                    "pid": line.get("ProductNumber"),
+                    "name": line.get("ProductName"),
+                    "qty": line.get("Quantity", 0),
+                }
+                for line in lines
+            ],
+        })
+
+    data = {
+        "refreshed_at": datetime.now(timezone.utc).isoformat(),
+        "orders": cached_orders,
+    }
+    save_history_cache(data)
+
+    total_items = sum(len(o["items"]) for o in cached_orders)
+    print(
+        f"Cached {len(cached_orders)} orders ({total_items} line items) to {HISTORY_CACHE_FILE}",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def cmd_list_show(args: argparse.Namespace) -> int:
     """Display the current grocery list."""
     data = load_grocery_list()
@@ -1377,6 +1439,16 @@ Examples:
     history_parser.add_argument("order_id", nargs="?", type=int, help="Order ID for details (optional)")
     history_parser.add_argument("-l", "--limit", type=int, default=10, help="Max orders to show (default: 10)")
 
+    # Refresh-history command — cache compact order history locally
+    refresh_history_parser = subparsers.add_parser(
+        "refresh-history",
+        help="Fetch and cache compact order history (with line items) for preference lookup",
+    )
+    refresh_history_parser.add_argument(
+        "-l", "--limit", type=int, default=20,
+        help="Number of recent orders to cache (default: 20)",
+    )
+
     # List command with subcommands
     list_parser = subparsers.add_parser("list", help="Manage grocery list")
     list_sub = list_parser.add_subparsers(dest="list_cmd")
@@ -1473,6 +1545,8 @@ Examples:
             return cmd_add(auth, args)
         elif args.command == "history":
             return cmd_history(auth, args)
+        elif args.command == "refresh-history":
+            return cmd_refresh_history(auth, args)
         elif args.command == "list":
             # List commands that require auth
             if args.list_cmd == "add":
