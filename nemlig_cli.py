@@ -70,7 +70,7 @@ except ImportError:
 
 # Interactive mode commands for tab completion
 COMMANDS = ["search", "details", "list", "basket", "help", "quit", "exit"]
-LIST_SUBCOMMANDS = ["add", "remove", "clear", "budget", "sync"]
+LIST_SUBCOMMANDS = ["add", "remove", "clear", "sync"]
 
 
 class NemligCompleter:
@@ -293,7 +293,7 @@ def load_grocery_list() -> dict:
     """Load grocery list from config file."""
     if LIST_FILE.exists():
         return json.loads(LIST_FILE.read_text())
-    return {"budget": 500.0, "items": []}
+    return {"items": []}
 
 
 def save_grocery_list(data: dict) -> None:
@@ -1007,13 +1007,12 @@ def cmd_refresh_history(auth: AuthTokens, args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_list_show(args: argparse.Namespace) -> int:
+def cmd_list_show(args: argparse.Namespace | None = None) -> int:
     """Display the current grocery list."""
     data = load_grocery_list()
     # Simple display for now
     if not data["items"]:
         print("Your grocery list is empty.")
-        print(f"Budget: {data['budget']:.2f} kr")
     else:
         print(f"Grocery List ({len(data['items'])} items):")
         total = 0
@@ -1021,12 +1020,7 @@ def cmd_list_show(args: argparse.Namespace) -> int:
             subtotal = item["unit_price"] * item["quantity"]
             total += subtotal
             print(f"  [{item['product_id']}] {item['name']} x{item['quantity']} @ {item['unit_price']:.2f} kr = {subtotal:.2f} kr")
-        print(f"\n  Total: {total:.2f} kr / Budget: {data['budget']:.2f} kr")
-        remaining = data['budget'] - total
-        if remaining < 0:
-            print(f"  ⚠ Over budget by {-remaining:.2f} kr!")
-        else:
-            print(f"  Remaining: {remaining:.2f} kr")
+        print(f"\n  Total: {total:.2f} kr")
     return 0
 
 
@@ -1129,25 +1123,6 @@ def cmd_list_clear(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_list_budget(args: argparse.Namespace) -> int:
-    """Show or set the budget."""
-    data = load_grocery_list()
-
-    if args.amount is not None:
-        data["budget"] = args.amount
-        save_grocery_list(data)
-        print(f"Budget set to {args.amount:.2f} kr")
-    else:
-        budget = data["budget"]
-        total = sum(item.get("unit_price", 0) * item.get("quantity", 1) for item in data["items"])
-        remaining = budget - total
-        print(f"Current budget: {budget:.2f} kr")
-        print(f"List total:     {total:.2f} kr")
-        print(f"Remaining:      {remaining:.2f} kr")
-
-    return 0
-
-
 def cmd_list_sync(auth: AuthTokens, args: argparse.Namespace) -> int:
     """Sync grocery list to nemlig basket."""
     data = load_grocery_list()
@@ -1222,7 +1197,6 @@ def interactive_mode(auth: AuthTokens, username: str) -> int:
     list add <query>    Add product to list (search by name)
     list remove <id>    Remove product from list
     list clear          Clear grocery list
-    list budget [amt]   Show/set budget
     list sync           Push list to nemlig basket
     basket              Show nemlig basket
     help                Show this help
@@ -1267,7 +1241,7 @@ def interactive_mode(auth: AuthTokens, username: str) -> int:
 
         elif command == "list":
             if len(parts) == 1:
-                cmd_list_show(args)
+                cmd_list_show()
                 print()
             elif parts[1] == "add" and len(parts) > 2:
                 query = " ".join(parts[2:])
@@ -1315,7 +1289,7 @@ def interactive_mode(auth: AuthTokens, username: str) -> int:
                                     })
                                 save_grocery_list(data)
                                 print(f"\n  ✓ Added: {product.get('Name')}")
-                                cmd_list_show(args)
+                                cmd_list_show()
                     except (ValueError, KeyboardInterrupt):
                         print("Cancelled.")
                     print()
@@ -1336,20 +1310,6 @@ def interactive_mode(auth: AuthTokens, username: str) -> int:
                 data["items"] = []
                 save_grocery_list(data)
                 print(f"  ✓ Cleared {count} items\n")
-            elif parts[1] == "budget":
-                data = load_grocery_list()
-                if len(parts) > 2:
-                    try:
-                        data["budget"] = float(parts[2])
-                        save_grocery_list(data)
-                        print(f"  ✓ Budget set to {data['budget']:.2f} kr\n")
-                    except ValueError:
-                        print("  Invalid amount\n")
-                else:
-                    total = sum(item.get("unit_price", 0) * item.get("quantity", 1) for item in data["items"])
-                    budget = data["budget"]
-                    remaining = budget - total
-                    print(f"  Budget: {budget:.2f} kr | Used: {total:.2f} kr | Remaining: {remaining:.2f} kr\n")
             elif parts[1] == "sync":
                 data = load_grocery_list()
                 if not data["items"]:
@@ -1364,7 +1324,7 @@ def interactive_mode(auth: AuthTokens, username: str) -> int:
                             print(f"    ✗ {item['name']} - {e}")
                     print("  Done! Use 'basket' to view.\n")
             else:
-                print("  Usage: list | list add <query> | list remove <id> | list clear | list budget [amt] | list sync\n")
+                print("  Usage: list | list add <query> | list remove <id> | list clear | list sync\n")
 
         elif command == "basket":
             spinner = Spinner("Loading basket")
@@ -1468,10 +1428,6 @@ Examples:
     # list clear
     list_sub.add_parser("clear", help="Clear all items from list")
 
-    # list budget
-    list_budget_parser = list_sub.add_parser("budget", help="Show or set budget")
-    list_budget_parser.add_argument("amount", nargs="?", type=float, help="New budget amount in kr")
-
     # list sync
     list_sub.add_parser("sync", help="Push list items to nemlig basket")
 
@@ -1488,8 +1444,6 @@ Examples:
             return cmd_list_remove(args)
         elif list_cmd == "clear":
             return cmd_list_clear(args)
-        elif list_cmd == "budget":
-            return cmd_list_budget(args)
         # Commands that need auth fall through to below
 
     # Load credentials: config file first, CLI overrides
